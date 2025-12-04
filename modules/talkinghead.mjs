@@ -121,7 +121,7 @@ class TalkingHead {
     this.nodeAvatar = node;
     this.opt = {
       jwtGet: null, // Function to get JSON Web Token
-      ttsEndpoint: "",
+      ttsEndpoint: null,
       ttsApikey: null,
       ttsTrimStart: 0,
       ttsTrimEnd: 400,
@@ -175,9 +175,6 @@ class TalkingHead {
       listeningActiveThresholdMs: 300,
       listeningActiveDurationMax: 240000,
       update: null,
-      avatarOnly: false,
-      avatarOnlyScene: null,
-      avatarOnlyCamera: null,
       statsNode: null,
       statsStyle: null
     };
@@ -759,8 +756,6 @@ class TalkingHead {
       'nn', 'RR', 'CH', 'sil'
     ];
 
-    // Grapheme segmenter
-    this.segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
 
     // Audio context and playlist
     this.initAudioGraph();
@@ -814,57 +809,52 @@ class TalkingHead {
       } else {
         throw new Error("There was no support for either OGG or MP3 audio.");
       }
+    } else {
+      throw new Error("You must provide some Google-compliant Text-To-Speech Endpoint.");
     }
 
-    // Avatar only mode
-    this.isAvatarOnly = this.opt.avatarOnly;
 
     // Setup 3D Animation
-    if ( this.isAvatarOnly ) {
-      this.scene = this.opt.avatarOnlyScene;
-      this.camera = this.opt.avatarOnlyCamera;
-    } else {
-      this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      this.renderer.setPixelRatio( this.opt.modelPixelRatio * window.devicePixelRatio );
-      this.renderer.setSize(this.nodeAvatar.clientWidth, this.nodeAvatar.clientHeight);
-      this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.renderer.shadowMap.enabled = false;
-      this.nodeAvatar.appendChild( this.renderer.domElement );
-      this.camera = new THREE.PerspectiveCamera( 10, this.nodeAvatar.clientWidth / this.nodeAvatar.clientHeight, 0.1, 2000 );
-      this.scene = new THREE.Scene();
-      this.lightAmbient = new THREE.AmbientLight(
-        new THREE.Color( this.opt.lightAmbientColor ),
-        this.opt.lightAmbientIntensity
-      );
-      this.lightDirect = new THREE.DirectionalLight(
-        new THREE.Color( this.opt.lightDirectColor ),
-        this.opt.lightDirectIntensity
-      );
-      this.lightSpot = new THREE.SpotLight(
-        new THREE.Color( this.opt.lightSpotColor ),
-        this.opt.lightSpotIntensity,
-        0,
-        this.opt.lightSpotDispersion
-      );
-      this.setLighting( this.opt );
-      const pmremGenerator = new THREE.PMREMGenerator( this.renderer );
-      pmremGenerator.compileEquirectangularShader();
-      this.scene.environment = pmremGenerator.fromScene( new RoomEnvironment() ).texture;
-      this.resizeobserver = new ResizeObserver(this.onResize.bind(this));
-      this.resizeobserver.observe(this.nodeAvatar);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer.setPixelRatio( this.opt.modelPixelRatio * window.devicePixelRatio );
+    this.renderer.setSize(this.nodeAvatar.clientWidth, this.nodeAvatar.clientHeight);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.shadowMap.enabled = false;
+    this.nodeAvatar.appendChild( this.renderer.domElement );
+    this.camera = new THREE.PerspectiveCamera( 10, this.nodeAvatar.clientWidth / this.nodeAvatar.clientHeight, 0.1, 2000 );
+    this.scene = new THREE.Scene();
+    this.lightAmbient = new THREE.AmbientLight(
+      new THREE.Color( this.opt.lightAmbientColor ),
+      this.opt.lightAmbientIntensity
+    );
+    this.lightDirect = new THREE.DirectionalLight(
+      new THREE.Color( this.opt.lightDirectColor ),
+      this.opt.lightDirectIntensity
+    );
+    this.lightSpot = new THREE.SpotLight(
+      new THREE.Color( this.opt.lightSpotColor ),
+      this.opt.lightSpotIntensity,
+      0,
+      this.opt.lightSpotDispersion
+    );
+    this.setLighting( this.opt );
+    const pmremGenerator = new THREE.PMREMGenerator( this.renderer );
+    pmremGenerator.compileEquirectangularShader();
+    this.scene.environment = pmremGenerator.fromScene( new RoomEnvironment() ).texture;
+    this.resizeobserver = new ResizeObserver(this.onResize.bind(this));
+    this.resizeobserver.observe(this.nodeAvatar);
 
-      this.controls = new OrbitControls( this.camera, this.renderer.domElement );
-      this.controls.enableZoom = this.opt.cameraZoomEnable;
-      this.controls.enableRotate = this.opt.cameraRotateEnable;
-      this.controls.enablePan = this.opt.cameraPanEnable;
-      this.controls.minDistance = 2;
-      this.controls.maxDistance = 2000;
-      this.controls.autoRotateSpeed = 0;
-      this.controls.autoRotate = false;
-      this.controls.update();
-      this.cameraClock = null;
-    }
+    this.controls = new OrbitControls( this.camera, this.renderer.domElement );
+    this.controls.enableZoom = this.opt.cameraZoomEnable;
+    this.controls.enableRotate = this.opt.cameraRotateEnable;
+    this.controls.enablePan = this.opt.cameraPanEnable;
+    this.controls.minDistance = 2;
+    this.controls.maxDistance = 2000;
+    this.controls.autoRotateSpeed = 0;
+    this.controls.autoRotate = false;
+    this.controls.update();
+    this.cameraClock = null;
 
     // IK Mesh
     this.ikMesh = new THREE.SkinnedMesh();
@@ -893,8 +883,7 @@ class TalkingHead {
     // Stream speech mode
     this.isStreaming = false;
     this.streamWorkletNode = null;
-    this.streamAudioStartTime = null;
-    this.streamWaitForAudioChunks = true;
+    this.streamAudioStartTime = 0;
     this.streamLipsyncLang = null;
     this.streamLipsyncType = "visemes";
     this.streamLipsyncQueue = [];
@@ -944,19 +933,8 @@ class TalkingHead {
       this.opt.mixerGainBackground
     );
     
-    // Delete the stream audio worklet if initialised
+    // Reset stream worklet loaded flag to reload with the new context
     this.workletLoaded = false;
-    if (this.streamWorkletNode) {
-      try {
-        this.streamWorkletNode.port.postMessage({type: 'stop'});
-        this.streamWorkletNode.disconnect();
-        this.isStreaming = false;
-      } catch(e) { 
-        console.error('Error disconnecting streamWorkletNode:', e);
-        /* ignore */ 
-      }
-      this.streamWorkletNode = null;
-    }
   }
 
   /**
@@ -1214,23 +1192,13 @@ class TalkingHead {
 
     // Clear previous scene, if avatar was previously loaded
     this.mixer = null;
-    if ( this.isAvatarOnly ) {
-      if ( this.armature ) {
-        this.clearThree( this.armature );
-      }
-    } else {
-      if ( this.armature ) {
-        this.clearThree( this.scene );
-      }
+    if ( this.armature ) {
+      this.clearThree( this.scene );
     }
 
     // Avatar full-body
     this.armature = gltf.scene.getObjectByName( this.opt.modelRoot );
     this.armature.scale.setScalar(1);
-
-    // Expose GLB animations and userData
-    this.animations = gltf.animations;
-    this.userData = gltf.userData;
 
     // Morph targets
     this.morphs = [];
@@ -1284,7 +1252,7 @@ class TalkingHead {
       // Copy previous values
       const y = this.mtAvatar[x];
       if ( y ) {
-        [ 'fixed','system','systemd','realtime','base','v','value','applied' ].forEach( z => {
+        [ 'fixed','system','systemd','base','v','value','applied' ].forEach( z => {
           mtTemp[x][z] = y[z];
         });
       }
@@ -1331,20 +1299,14 @@ class TalkingHead {
       }
     });
 
-    if ( this.isAvatarOnly ) {
-      if ( this.scene ) {
-        this.scene.add( this.armature );
-      }
-    } else {
-      // Add avatar to scene
-      this.scene.add(gltf.scene);
+    // Add avatar to scene
+    this.scene.add(gltf.scene);
 
-      // Add lights
-      this.scene.add( this.lightAmbient );
-      this.scene.add( this.lightDirect );
-      this.scene.add( this.lightSpot );
-      this.lightSpot.target = this.armature.getObjectByName('Head');
-    }
+    // Add lights
+    this.scene.add( this.lightAmbient );
+    this.scene.add( this.lightDirect );
+    this.scene.add( this.lightSpot );
+    this.lightSpot.target = this.armature.getObjectByName('Head');
 
     // Setup Dynamic Bones
     if ( avatar.hasOwnProperty("modelDynamicBones") ) {
@@ -1411,9 +1373,6 @@ class TalkingHead {
     this.viewName = view || this.viewName;
     opt = opt || {};
 
-    // In avatarOnly mode we do not control the camera
-    if ( this.isAvatarOnly ) return;
-
     // Camera controls
     const cameraX = opt.hasOwnProperty("cameraX") ? opt.cameraX : this.opt.cameraX;
     const cameraY = opt.hasOwnProperty("cameraY") ? opt.cameraY : this.opt.cameraY;
@@ -1464,7 +1423,6 @@ class TalkingHead {
   * @param {Object} opt Options
   */
   setLighting(opt) {
-    if ( this.isAvatarOnly ) return;
     opt = opt || {};
 
     // Ambient light
@@ -1509,7 +1467,7 @@ class TalkingHead {
   * Render scene.
   */
   render() {
-    if ( this.isRunning && !this.isAvatarOnly ) {
+    if ( this.isRunning ) {
       this.renderer.render( this.scene, this.camera );
     }
   }
@@ -1518,13 +1476,11 @@ class TalkingHead {
   * Resize avatar.
   */
   onResize() {
-    if ( !this.isAvatarOnly ) {
-      this.camera.aspect = this.nodeAvatar.clientWidth / this.nodeAvatar.clientHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize( this.nodeAvatar.clientWidth, this.nodeAvatar.clientHeight );
-      this.controls.update();
-      this.render();
-    }
+    this.camera.aspect = this.nodeAvatar.clientWidth / this.nodeAvatar.clientHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize( this.nodeAvatar.clientWidth, this.nodeAvatar.clientHeight );
+    this.controls.update();
+    this.render();
   }
 
   /**
@@ -2319,24 +2275,20 @@ class TalkingHead {
 
   /**
   * Animate the avatar.
-  * @param {number} t High precision timestamp in ms. In avatarOnly mode delta.
+  * @param {number} t High precision timestamp in ms.
   */
   animate(t) {
 
     // Are we running?
     if ( !this.isRunning ) return;
+    requestAnimationFrame( this.animate.bind(this) );
 
-    let dt;
-    if ( this.isAvatarOnly ) {
-      dt = t;
-    } else {
-      requestAnimationFrame( this.animate.bind(this) );
-      dt = t - this.animTimeLast;
-      if ( dt < this.animFrameDur ) return;
-      this.animTimeLast = t;
-    }
+    // Delta time
+    let dt = t - this.animTimeLast;
+    if ( dt < this.animFrameDur ) return;
     dt = dt / this.animSlowdownRate;
     this.animClock += dt;
+    this.animTimeLast = t;
 
     let i,j,l,k,vol=0;
 
@@ -2601,7 +2553,7 @@ class TalkingHead {
     if ( dt > 2 * this.animFrameDur ) dt = 2 * this.animFrameDur;
 
     // Randomize facial expression by changing baseline
-    if ( this.viewName !== 'full' || this.isAvatarOnly) {
+    if ( this.viewName !== 'full' ) {
       i = this.mtRandomized[ Math.floor( Math.random() * this.mtRandomized.length ) ];
       j = this.mtAvatar[i];
       if ( !j.needsUpdate ) {
@@ -2647,9 +2599,7 @@ class TalkingHead {
     // Hip-feet balance
     box.setFromObject( this.armature );
     this.objectLeftToeBase.getWorldPosition(v);
-    v.sub(this.armature.position);
     this.objectRightToeBase.getWorldPosition(w);
-    w.sub(this.armature.position);
     this.objectHips.position.y -= box.min.y / 2;
     this.objectHips.position.x -= (v.x+w.x)/4;
     this.objectHips.position.z -= (v.z+w.z)/2;
@@ -2665,51 +2615,40 @@ class TalkingHead {
     // Update morph targets
     this.updateMorphTargets(dt);
 
-    // Finalize
-    if ( this.isAvatarOnly ) {
-
-      // Statistics end
-      if ( this.stats ) {
-        this.stats.end();
-      }
-
-    } else {
-
-      // Camera
-      if ( this.cameraClock !== null && this.cameraClock < 1000 ) {
-        this.cameraClock += dt;
-        if ( this.cameraClock > 1000 ) this.cameraClock = 1000;
-        let s = new THREE.Spherical().setFromVector3(this.cameraStart);
-        let sEnd = new THREE.Spherical().setFromVector3(this.cameraEnd);
+    // Camera
+    if ( this.cameraClock !== null && this.cameraClock < 1000 ) {
+      this.cameraClock += dt;
+      if ( this.cameraClock > 1000 ) this.cameraClock = 1000;
+      let s = new THREE.Spherical().setFromVector3(this.cameraStart);
+      let sEnd = new THREE.Spherical().setFromVector3(this.cameraEnd);
+      s.phi += this.easing(this.cameraClock / 1000) * (sEnd.phi - s.phi);
+      s.theta += this.easing(this.cameraClock / 1000) * (sEnd.theta - s.theta);
+      s.radius += this.easing(this.cameraClock / 1000) * (sEnd.radius - s.radius);
+      s.makeSafe();
+      this.camera.position.setFromSpherical( s );
+      if ( this.controlsStart.x !== this.controlsEnd.x ) {
+        this.controls.target.copy( this.controlsStart.lerp( this.controlsEnd, this.easing(this.cameraClock / 1000) ) );
+      } else {
+        s.setFromVector3(this.controlsStart);
+        sEnd.setFromVector3(this.controlsEnd);
         s.phi += this.easing(this.cameraClock / 1000) * (sEnd.phi - s.phi);
         s.theta += this.easing(this.cameraClock / 1000) * (sEnd.theta - s.theta);
         s.radius += this.easing(this.cameraClock / 1000) * (sEnd.radius - s.radius);
         s.makeSafe();
-        this.camera.position.setFromSpherical( s );
-        if ( this.controlsStart.x !== this.controlsEnd.x ) {
-          this.controls.target.copy( this.controlsStart.lerp( this.controlsEnd, this.easing(this.cameraClock / 1000) ) );
-        } else {
-          s.setFromVector3(this.controlsStart);
-          sEnd.setFromVector3(this.controlsEnd);
-          s.phi += this.easing(this.cameraClock / 1000) * (sEnd.phi - s.phi);
-          s.theta += this.easing(this.cameraClock / 1000) * (sEnd.theta - s.theta);
-          s.radius += this.easing(this.cameraClock / 1000) * (sEnd.radius - s.radius);
-          s.makeSafe();
-          this.controls.target.setFromSpherical( s );
-        }
-        this.controls.update();
+        this.controls.target.setFromSpherical( s );
       }
-
-      // Autorotate
-      if ( this.controls.autoRotate ) this.controls.update();
-
-      // Statistics end
-      if ( this.stats ) {
-        this.stats.end();
-      }
-
-      this.render();
+      this.controls.update();
     }
+
+    // Autorotate
+    if ( this.controls.autoRotate ) this.controls.update();
+
+    // Statistics end
+    if ( this.stats ) {
+      this.stats.end();
+    }
+
+    this.render();
 
   }
 
@@ -2789,7 +2728,7 @@ class TalkingHead {
     let markId = 0; // SSML mark id
     let ttsSentence = []; // Text-to-speech sentence
     let lipsyncAnim = []; // Lip-sync animation sequence
-    const letters = Array.from(this.segmenter.segment(s), x => x.segment);
+    const letters = [...s];
     for( let i=0; i<letters.length; i++ ) {
       const isLast = i === (letters.length-1);
       const isSpeakable = letters[i].match(speakables);
@@ -3419,25 +3358,21 @@ class TalkingHead {
 
   /**
   * Start streaming mode.
-  * @param {Object} [opt={}] Optional settings include gain, sampleRate, lipsyncLang, lipsyncType, metrics, and waitForAudioChunks
-  * @param {function} [onAudioStart=null] Optional callback when audio playback starts
-  * @param {function} [onAudioEnd=null] Optional callback when audio streaming is automatically ended
-  * @param {function} [onSubtitles=null] Optional callback to play subtitles
-  * @param {function} [onMetrics=null] Optional callback to receive metrics data during streaming
+  * @param opt optional settings inlcude gain, sampleRate, lipsyncLang, and lipsyncType
+  * @onAudioStart optional callback when audio playback starts
+  * @onAudioEnd optional callback when audio streaming is automatically ended.
+  * @onSubtitles optional callback to play subtitles
   */
-  async streamStart(opt = {}, onAudioStart = null, onAudioEnd = null, onSubtitles = null, onMetrics = null) {
+  async streamStart(opt = {}, onAudioStart = null, onAudioEnd = null, onSubtitles = null) {
     this.stopSpeaking(); // Stop the speech queue mode
 
     this.isStreaming = true;
-    if (opt.waitForAudioChunks) this.streamWaitForAudioChunks = opt.waitForAudioChunks;
-    if (!this.streamWaitForAudioChunks) { this.streamAudioStartTime = this.animClock; }
+    this.isSpeaking = true;
+    this.stateName = "speaking";
+    this.streamAudioStartTime = 0;
     this.streamLipsyncQueue = [];
     this.streamLipsyncType = opt.lipsyncType || this.streamLipsyncType || 'visemes';
     this.streamLipsyncLang = opt.lipsyncLang || this.streamLipsyncLang || this.avatar.lipsyncLang || this.opt.lipsyncLang;
-    // Store callbacks for this streaming session
-    this.onAudioStart = onAudioStart;
-    this.onAudioEnd = onAudioEnd;
-    this.onMetrics = onMetrics;
 
     if (opt.sampleRate !== undefined) {
       const sr = opt.sampleRate;    
@@ -3460,79 +3395,41 @@ class TalkingHead {
       this.audioStreamGainNode.gain.value = opt.gain;
     }
 
-    // Check if we need to create or recreate the worklet
-    const needsWorkletSetup = !this.streamWorkletNode || 
-                              !this.streamWorkletNode.port || 
-                              this.streamWorkletNode.numberOfOutputs === 0 ||
-                              this.streamWorkletNode.context !== this.audioCtx;
-
-    if (needsWorkletSetup) {
-      // Clean up existing worklet if it exists but is invalid
-      if (this.streamWorkletNode) {
-        try {
-          this.streamWorkletNode.disconnect();
-          this.streamWorkletNode = null;
-        } catch (e) {
-          // Ignore errors during cleanup
-        }
+    if (!this.workletLoaded) {
+      try {
+        const loadPromise = this.audioCtx.audioWorklet.addModule(workletUrl.href);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Worklet loading timed out")), 5000)
+        );
+        await Promise.race([loadPromise, timeoutPromise]);
+        this.workletLoaded = true;
+      } catch (error) {
+        console.error("Failed to load audio worklet:", error);
+        throw new Error("Failed to initialize streaming speech");
       }
-
-      if (!this.workletLoaded) {
-        try {
-          const loadPromise = this.audioCtx.audioWorklet.addModule(workletUrl.href);
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Worklet loading timed out")), 5000)
-          );
-          await Promise.race([loadPromise, timeoutPromise]);
-          this.workletLoaded = true;
-        } catch (error) {
-          console.error("Failed to load audio worklet:", error);
-          throw new Error("Failed to initialize streaming speech");
-        }
-      }
-
-      this.streamWorkletNode = new AudioWorkletNode(this.audioCtx, 'playback-worklet', {
-        processorOptions: {
-          sampleRate: this.audioCtx.sampleRate,
-          metrics: opt.metrics || { enabled: false }
-        }
-      });
-
-      // Connect the node to the audio graph
-      this.streamWorkletNode.connect(this.audioStreamGainNode);
-      this.streamWorkletNode.connect(this.audioAnalyzerNode);
-
-      this.streamWorkletNode.port.onmessage = (event) => {
-
-        if(event.data.type === 'playback-started') {
-          this.isSpeaking = true;
-          this.stateName = "speaking";
-          if (this.streamWaitForAudioChunks) this.streamAudioStartTime = this.animClock;
-          this._processStreamLipsyncQueue();
-          this.speakWithHands();
-          if (this.onAudioStart) {
-            try { this.onAudioStart?.(); } catch(e) { console.error(e); }
-          }
-        }
-
-        if (event.data.type === 'playback-ended') {
-          this._streamPause();
-          if (this.onAudioEnd) {
-            try { this.onAudioEnd?.(); } catch(e) { console.error(e); }
-          }
-        }
-
-        // Forward diagnostic metrics if provided
-        if (this.onMetrics && event.data.type === 'metrics') {
-          try { this.onMetrics(event.data); } catch(e) { /* ignore */ }
-        }
-      };
     }
 
-    // Update metrics config if provided (can be different per session)
-    if (opt.metrics) {
-      try { this.streamWorkletNode.port.postMessage({ type: 'config-metrics', data: opt.metrics }); } catch(e) {}
-    }
+    // Create and connect worklet node
+    this.streamWorkletNode = new AudioWorkletNode(this.audioCtx, 'playback-worklet');
+    
+    // Connect worklet through stream gain node for volume control
+    this.streamWorkletNode.connect(this.audioStreamGainNode);
+    this.streamWorkletNode.connect(this.audioAnalyzerNode);
+  
+    this.streamWorkletNode.port.onmessage = (event) => {
+
+      if(event.data.type === 'playback-started') {
+        this.streamAudioStartTime = this.animClock;
+        this._processStreamLipsyncQueue();
+        this.speakWithHands();
+        if (onAudioStart) onAudioStart();
+      }
+
+      if (event.data.type === 'playback-ended') {
+        this.streamStop();
+        if (onAudioEnd) onAudioEnd();
+      }
+    };
 
     this.resetLips();
     this.lookAtCamera(500);
@@ -3546,7 +3443,7 @@ class TalkingHead {
       try {
         await Promise.race([resume, timeout]);
       } catch(e) {
-        console.warn("Can't play audio. Web Audio API suspended. This is often due to calling some speak method before the first user action, which is typically prevented by the browser.");
+        console.log("Can't play audio. Web Audio API suspended. This is often due to calling some speak method before the first user action, which is typically prevented by the browser.");
         return;
       }
     }
@@ -3562,51 +3459,28 @@ class TalkingHead {
     this.streamWorkletNode.port.postMessage({ type: 'no-more-data' });
   }
 
-  /**
-   * Interrupt ongoing stream audio and lipsync
-   */
-  streamInterrupt() {
-    if (this.streamWorkletNode) {
-      // tell worklet to stop.
-      try { this.streamWorkletNode.port.postMessage({type: 'stop'}); } catch(e) { /* ignore */ }
-    }
-    this._streamPause(true);
-  }
 
   /**
    * Stop streaming mode
-   * @param {boolean} disconnect - If true, also disconnect and cleanup the audio worklet
    */
   streamStop() {
-    this.streamInterrupt();
     if (this.streamWorkletNode) {
       try {
+        this.streamWorkletNode.port.postMessage({type: 'stop'});
         this.streamWorkletNode.disconnect();
-        this.streamWorkletNode = null;
-      } catch(e) { /* ignore */ }
+      } catch(e) { 
+        console.error('Error disconnecting streamWorkletNode:', e);
+        /* ignore */ 
+      }
+      this.streamWorkletNode = null;
     }
     this.isStreaming = false;
-  }
-  
-
-  /**
-   * Internal function to pause the speaking state after a speech utterance. 
-   * This is called when the audio stream ends or is interrupted.
-   * @param {boolean} interrupt_lipsync - If true, interrupts the lipsync
-   * @private
-   */
-  _streamPause(interrupt_lipsync = false) {
     this.isSpeaking = false;
     this.stateName = "idle";
-    if (this.streamWaitForAudioChunks) this.streamAudioStartTime = null;
-    this.streamLipsyncQueue = [];
-    // force stop the speech animation.
-    if(interrupt_lipsync) {
-      this.animQueue = this.animQueue.filter( x  => x.template.name !== 'viseme' && x.template.name !== 'subtitles' && x.template.name !== 'blendshapes' );
-      if ( this.armature ) {
-        this.resetLips();
-        this.render();
-      }
+    this.streamAudioStartTime = 0;
+    if ( this.armature ) {
+      this.resetLips();
+      this.render();
     }
   }
 
@@ -3616,7 +3490,7 @@ class TalkingHead {
  * @private
  */
   _processStreamLipsyncQueue() {
-    if (!this.isStreaming) return;
+    // console.log(`[TalkingHead] Processing ${this.streamLipsyncQueue.length} queued lipsync items.`);
     while (this.streamLipsyncQueue.length > 0) {
       const lipsyncPayload = this.streamLipsyncQueue.shift();
       // Pass the now confirmed streamAudioStartTime
@@ -3631,9 +3505,6 @@ class TalkingHead {
    * * @private
    */
   _processLipsyncData(r, audioStart) {
-    // Early return if streaming has been stopped
-    if (!this.isStreaming) return;
-    
     // Process visemes
     if (r.visemes && this.streamLipsyncType == 'visemes') {
       for (let i = 0; i < r.visemes.length; i++) {
@@ -3716,44 +3587,19 @@ class TalkingHead {
   */
   streamAudio(r) {
     if (!this.isStreaming || !this.streamWorkletNode) return;
-    this.isSpeaking = true;
-    this.stateName = "speaking";
 
-    // Process audio data if provided
-    if (r.audio !== undefined) {
-      const message = { type: 'audioData', data: null };
-
-      // Feed ArrayBuffer for performance. Other fallback formats require copy/conversion.
-      if (r.audio instanceof ArrayBuffer) {
-        message.data = r.audio;
-        this.streamWorkletNode.port.postMessage(message, [message.data]);
-      } 
-      else if (r.audio instanceof Int16Array || r.audio instanceof Uint8Array) {
-        const bufferCopy = r.audio.buffer.slice(r.audio.byteOffset, r.audio.byteOffset + r.audio.byteLength);
-        message.data = bufferCopy;
-        this.streamWorkletNode.port.postMessage(message, [message.data]);
-      } 
-      else if (r.audio instanceof Float32Array) {
-        // Convert Float32 -> Int16 PCM
-        const int16Buffer = new Int16Array(r.audio.length);
-        for (let i = 0; i < r.audio.length; i++) {
-            let s = Math.max(-1, Math.min(1, r.audio[i])); // clamp
-            int16Buffer[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-        }
-        message.data = int16Buffer.buffer;
-        this.streamWorkletNode.port.postMessage(message, [message.data]);
-      } 
-      else {
-          console.error("r.audio is not a supported type. Must be ArrayBuffer, Int16Array, Uint8Array, or Float32Array:", r.audio);
-      }
+    if (r.audio instanceof ArrayBuffer) {
+        this.streamWorkletNode.port.postMessage(r.audio, [r.audio]);
+    } else if (r.audio instanceof Int16Array) {
+      // Fallback: r.audio is an Int16Array
+      this.streamWorkletNode.port.postMessage(r.audio); // No transfer list, so it gets cloned
+    } else {
+      console.error("r.audio is not an ArrayBuffer or Int16Array. Cannot process audio of this type:", r.audio);
     }
 
     if(r.visemes || r.anims || r.words) {
-      if(this.streamWaitForAudioChunks && !this.streamAudioStartTime) {
+      if(!this.streamAudioStartTime) {
         // Lipsync data received before audio playback start. Queue the lipsync data.
-        if (this.streamLipsyncQueue.length >= 200) { // set maximum queue length
-            this.streamLipsyncQueue.shift();
-        }
         this.streamLipsyncQueue.push(r);
         return;
       }
@@ -3816,111 +3662,16 @@ class TalkingHead {
   */
   lookAtCamera(t) {
 
-    // Calculate the target
-    let target;
-    if ( this.speakTo ) {
-      target = new THREE.Vector3();
-      if ( this.speakTo.objectLeftEye?.isObject3D ) {
-
-        // Target eyes
-        const o = this.speakTo.armature.objectHead;
-        this.speakTo.objectLeftEye.updateMatrixWorld(true);
-        this.speakTo.objectRightEye.updateMatrixWorld(true);
-        v.setFromMatrixPosition(this.speakTo.objectLeftEye.matrixWorld);
-        w.setFromMatrixPosition(this.speakTo.objectRightEye.matrixWorld);
-        target.addVectors(v,w).divideScalar( 2 );
-
-      } else if ( this.speakTo.isObject3D ) {
-        this.speakTo.getWorldPosition(target);
-      } else if ( this.speakTo.isVector3 ) {
-        target.set( this.speakTo );
-      } else if ( this.speakTo.x && this.speakTo.y && this.speakTo.z ) {
-        target.set( this.speakTo.x, this.speakTo.y, this.speakTo.z );
-      }
-    }
-    
-    // If we don't have a target, look ahead or to the screen
-    if ( !target ) {
-      if ( this.avatar.hasOwnProperty('avatarIgnoreCamera') ) {
-        if ( this.avatar.avatarIgnoreCamera ) {
-          this.lookAhead(t);
-          return;
-        }
-      } else if ( this.opt.avatarIgnoreCamera ) {
+    if ( this.avatar.hasOwnProperty('avatarIgnoreCamera') ) {
+      if ( this.avatar.avatarIgnoreCamera ) {
         this.lookAhead(t);
-        return;
+      } else {
+        this.lookAt( null, null, t );
       }
-      this.lookAt(null,null,t);
-      return;
-    }
-
-    // TODO: Improve the logic, if possible
-
-    // Eyes position and head world rotation
-    this.objectLeftEye.updateMatrixWorld(true);
-    this.objectRightEye.updateMatrixWorld(true);
-    v.setFromMatrixPosition(this.objectLeftEye.matrixWorld);
-    w.setFromMatrixPosition(this.objectRightEye.matrixWorld);
-    v.add(w).divideScalar( 2 );
-    q.copy( this.armature.quaternion );
-    q.multiply( this.poseTarget.props['Hips.quaternion'] );
-    q.multiply( this.poseTarget.props['Spine.quaternion'] );
-    q.multiply( this.poseTarget.props['Spine1.quaternion'] );
-    q.multiply( this.poseTarget.props['Spine2.quaternion'] );
-    q.multiply( this.poseTarget.props['Neck.quaternion'] );
-    q.multiply( this.poseTarget.props['Head.quaternion'] );
-
-    // Direction from object to speakto target
-    const dir = new THREE.Vector3().subVectors(target, v).normalize();
-
-    // Remove roll: compute yaw + pitch only
-    const yaw   = Math.atan2(dir.x, dir.z); // rotation around Y
-    const pitch = Math.asin(-dir.y); // rotation around X
-    const roll  = 0; // force to 0
-
-    // Desired rotation with Z locked
-    e.set(pitch, yaw, roll, 'YXZ');
-    const desiredQ  = new THREE.Quaternion().setFromEuler(e);
-
-    // Rotation difference
-    const deltaQ = new THREE.Quaternion().copy(desiredQ).multiply(q.clone().invert());
-
-    // Convert to Euler (Z will be ~0 by construction)
-    e.setFromQuaternion(deltaQ, 'YXZ');
-    let rx = e.x / (40/24) + 0.2; // Refer to setValue(bodyRotateX)
-    let ry = e.y / (9/4); // Refer to setValue(bodyRotateY)
-    let rotx = Math.min(0.6,Math.max(-0.3,rx));
-    let roty = Math.min(0.8,Math.max(-0.8,ry));
-
-    // Randomize head/eyes ratio
-    let drotx = (Math.random() - 0.5) / 4;
-    let droty = (Math.random() - 0.5) / 4;
-
-    if ( t ) {
-
-      // Remove old, if any
-      let old = this.animQueue.findIndex( y => y.template.name === 'lookat' );
-      if ( old !== -1 ) {
-        this.animQueue.splice(old, 1);
-      }
-
-      // Add new anim
-      const templateLookAt = {
-        name: 'lookat',
-        dt: [750,t],
-        vs: {
-          bodyRotateX: [ rotx + drotx ],
-          bodyRotateY: [ roty + droty ],
-          eyesRotateX: [ - 3 * drotx + 0.1 ],
-          eyesRotateY: [ - 5 * droty ],
-          browInnerUp: [[0,0.7]],
-          mouthLeft: [[0,0.7]],
-          mouthRight: [[0,0.7]],
-          eyeContact: [0],
-          headMove: [0]
-        }
-      };
-      this.animQueue.push( this.animFactory( templateLookAt ) );
+    } else if ( this.opt.avatarIgnoreCamera ) {
+      this.lookAhead(t);
+    } else {
+      this.lookAt( null, null, t );
     }
 
   }
@@ -3932,7 +3683,6 @@ class TalkingHead {
   * @param {number} t Time in milliseconds
   */
   lookAt(x,y,t) {
-    if ( !this.camera ) return; // Can't be done w/o knowing the camera location
 
     // Eyes position
     const rect = this.nodeAvatar.getBoundingClientRect();
@@ -3951,8 +3701,7 @@ class TalkingHead {
     if ( y === null ) y = eyesy;
 
     // Use body/camera rotation to determine the required head rotation
-    q.copy( this.armature.quaternion );
-    q.multiply( this.poseTarget.props['Hips.quaternion'] );
+    q.copy( this.poseTarget.props['Hips.quaternion'] );
     q.multiply( this.poseTarget.props['Spine.quaternion'] );
     q.multiply( this.poseTarget.props['Spine1.quaternion'] );
     q.multiply( this.poseTarget.props['Spine2.quaternion'] );
@@ -4012,7 +3761,6 @@ class TalkingHead {
   * @return {Boolean} If true, (x,y) touch the avatar
   */
   touchAt(x,y) {
-    if ( !this.camera ) return; // Can't be done w/o knowing the camera location
 
     const rect = this.nodeAvatar.getBoundingClientRect();
     const pointer = new THREE.Vector2(
@@ -4176,9 +3924,7 @@ class TalkingHead {
       this.audioCtx.resume();
       this.animTimeLast = performance.now();
       this.isRunning = true;
-      if ( !this.isAvatarOnly ) {
-        requestAnimationFrame( this.animate.bind(this) );
-      }
+      requestAnimationFrame( this.animate.bind(this) );
     }
   }
 
@@ -4596,7 +4342,7 @@ class TalkingHead {
     root.position.setFromMatrixPosition( this.armature.getObjectByName(ik.root).matrixWorld );
     root.quaternion.setFromRotationMatrix( this.armature.getObjectByName(ik.root).matrixWorld );
     if ( target && relative ) {
-      target.applyQuaternion(this.armature.quaternion).add( root.position );
+      target.add( root.position );
     }
     const effector = this.ikMesh.getObjectByName(ik.effector);
     const links = ik.links;
@@ -4667,33 +4413,6 @@ class TalkingHead {
         this.poseTarget.props[x.link+".quaternion"].d = d;
       });
     }
-  }
-
-  /**
-  * Dispose the instance.
-  */
-  dispose() {
-    
-    // Stop animation, clear speech queue, stop stream
-    this.stop();
-    this.stopSpeaking();
-    this.streamStop();
-
-    // Dispose Three.JS objects
-    if ( this.isAvatarOnly ) {
-      if ( this.armature ) {
-        if ( this.armature.parent ) {
-          this.armature.parent.remove(this.armature);
-        }
-        this.clearThree(this.armature);
-      }
-    } else {
-      this.clearThree(this.scene);
-      this.resizeobserver.disconnect();
-    }
-    this.clearThree( this.ikMesh );
-    this.dynamicbones.dispose();
-
   }
 
 }
