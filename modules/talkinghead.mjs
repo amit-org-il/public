@@ -310,12 +310,12 @@ class TalkingHead {
     ['Left','Right'].forEach( x => {
       ['Leg','UpLeg','Arm','ForeArm','Hand'].forEach( y => {
         this.poseDelta.props[x+y+'.quaternion'] = {x:0, y:0, z:0};
-      });
+
       ['HandThumb', 'HandIndex','HandMiddle','HandRing', 'HandPinky'].forEach( y => {
         this.poseDelta.props[x+y+'1.quaternion'] = {x:0, y:0, z:0};
         this.poseDelta.props[x+y+'2.quaternion'] = {x:0, y:0, z:0};
         this.poseDelta.props[x+y+'3.quaternion'] = {x:0, y:0, z:0};
-      });
+
     })
 
     // Dynamically pick up all the property names that we need in the code
@@ -1077,7 +1077,7 @@ class TalkingHead {
         if ( obj.material[x] && obj.material[x] !== null && typeof obj.material[x].dispose === 'function' ) {
           obj.material[x].dispose();
         }
-      });
+
       obj.material.dispose();
     }
   }
@@ -1254,7 +1254,7 @@ class TalkingHead {
       if ( y ) {
         [ 'fixed','system','systemd','base','v','value','applied' ].forEach( z => {
           mtTemp[x][z] = y[z];
-        });
+  
       }
 
       // Find relevant meshes
@@ -1265,7 +1265,7 @@ class TalkingHead {
           mtTemp[x].is.push(ndx);
           y.morphTargetInfluences[ndx] = mtTemp[x].applied;
         }
-      });
+
 
     });
     this.mtAvatar = mtTemp;
@@ -1703,7 +1703,7 @@ class TalkingHead {
             this.poseDelta.props[side+x+'2.quaternion'].x = 1.5 * o.applied;
             this.poseDelta.props[side+x+'3.quaternion'].x = 1.5 * o.applied;
           }
-        });
+  
         break;
 
       case 'chestInhale':
@@ -2153,7 +2153,7 @@ class TalkingHead {
           val = this.gaussianRandom(...val);
         }
         o.ts[i+1] = o.ts[i] + val;
-      });
+
     } else {
       let l = Object.values(a.vs).reduce( (acc,val) => (val.length > acc) ? val.length : acc, 0);
       o.ts = Array(l+1).fill(0);
@@ -2188,7 +2188,7 @@ class TalkingHead {
         } else {
           return (base === undefined ? 0 : base) + scaleValue * x;
         }
-      });
+
 
       if ( mt === 'eyesRotateY' ) {
         o.vs['eyeLookOutLeft'] = [null, ...vals.map( x => (x>0) ? x : 0 ) ];
@@ -2480,7 +2480,7 @@ class TalkingHead {
           }
           this.poseTarget.props[y[0]].t = this.animClock;
           this.poseTarget.props[y[0]].d = (y[1] && y[1].d) ? y[1].d : (y.duration || 2000);
-        });
+  
         break;
 
       case 'handLeft':
@@ -2662,7 +2662,7 @@ class TalkingHead {
         if ( ndx !== undefined ) {
           y.morphTargetInfluences[ndx] = 0;
         }
-      });
+
     });
   }
 
@@ -2677,6 +2677,8 @@ class TalkingHead {
       const className = 'Lipsync' + lang.charAt(0).toUpperCase() + lang.slice(1);
       import(moduleName).then( module => {
         this.lipsync[lang] = new module[className];
+      }).catch( () => {
+        // Language module not found, silently ignore
       });
     }
   }
@@ -2763,7 +2765,7 @@ class TalkingHead {
             ttsSentence.push( {
               mark: markId,
               word: textWord
-            });
+      
           }
         }
 
@@ -2776,7 +2778,7 @@ class TalkingHead {
             vs: {
               subtitles: [markdownWord]
             },
-          });
+    
           markdownWord = '';
         }
 
@@ -2794,7 +2796,7 @@ class TalkingHead {
                 vs: {
                   ['viseme_'+val.visemes[j]]: [null,(val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : 0.6,0]
                 }
-              });
+        
             }
           }
           textWord = '';
@@ -2986,7 +2988,7 @@ class TalkingHead {
               vs: {
                 subtitles: [' ' + word]
               }
-            });
+      
           }
 
           // If visemes were not specified, calculate visemes based on the words
@@ -3008,7 +3010,7 @@ class TalkingHead {
                     vs: {
                       ['viseme_'+val.visemes[j]]: [null,(val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : level, 0]
                     }
-                  });
+            
                 }
               }
             }
@@ -3028,7 +3030,7 @@ class TalkingHead {
             vs: {
               ['viseme_'+viseme]: [null,(viseme === 'PP' || viseme === 'FF') ? 0.9 : 0.6, 0]
             }
-          });
+    
         }
       }
 
@@ -3041,7 +3043,7 @@ class TalkingHead {
             template: { name: 'markers' },
             ts: [ time ],
             vs: { "function": [fn] }
-          });
+    
         }
       }
 
@@ -3130,7 +3132,7 @@ class TalkingHead {
             x.ts[i] = this.animClock + x.ts[i] + delay;
           }
           this.animQueue.push(x);
-        });
+  
       }
 
       // Play, dealy in seconds so pre-animations can be played
@@ -3201,7 +3203,7 @@ class TalkingHead {
               .replaceAll('\'','&apos;')
               .replace(/^\p{Dash_Punctuation}$/ug,'<break time="750ms"/>');
 
-          });
+    
           ssml += "</speak>";
 
 
@@ -3257,7 +3259,7 @@ class TalkingHead {
                 }
                 times.push( ms );
               }
-            });
+      
 
             // Word-to-audio alignment
             const timepoints = [ { mark: 0, time: 0 } ];
@@ -3268,7 +3270,7 @@ class TalkingHead {
                 timepoints[i-1].duration = prevDuration;
                 timepoints.push( { mark: i, time: x });
               }
-            });
+      
             let d = 1000 * audio.duration; // Duration in ms
             if ( d > this.opt.ttsTrimEnd ) d = d - this.opt.ttsTrimEnd; // Trim out silence at the end
             timepoints[timepoints.length-1].duration = d - timepoints[timepoints.length-1].time;
@@ -3281,7 +3283,7 @@ class TalkingHead {
                   x.ts[i] = timepoint.time + (x.ts[i] * timepoint.duration) + this.opt.ttsTrimStart;
                 }
               }
-            });
+      
 
             // Add to the playlist
             this.audioPlaylist.push({ anim: line.anim, audio: audio });
@@ -3307,7 +3309,7 @@ class TalkingHead {
             x.ts[j] = this.animClock  + 10 * i;
           }
           this.animQueue.push(x);
-        });
+  
         setTimeout( this.startSpeaking.bind(this), 10 * line.anim.length, true );
       } else if ( line.marker ) {
         if ( typeof line.marker === "function" ) {
@@ -3538,7 +3540,7 @@ class TalkingHead {
               vs: {
                 subtitles: [' ' + word]
               }
-            });
+      
           }
 
           // Calculate visemes based on the words
@@ -3561,7 +3563,7 @@ class TalkingHead {
                     vs: {
                       ['viseme_' + val.visemes[j]]: [null, (val.visemes[j] === 'PP' || val.visemes[j] === 'FF') ? 0.9 : level, 0]
                     }
-                  });
+            
                 }
               }
             }
@@ -3805,7 +3807,7 @@ class TalkingHead {
         this.poseTarget.props[key].copy( this.getPoseTemplateProp(key) );
         this.poseTarget.props[key].t = this.animClock;
         this.poseTarget.props[key].d = 1000;
-      });
+
     }
 
     return ( intersects.length > 0 );
@@ -3997,7 +3999,7 @@ class TalkingHead {
         this.poseTarget.props[x[0]] = x[1].clone();
         this.poseTarget.props[x[0]].t = 0;
         this.poseTarget.props[x[0]].d = 1000;
-      });
+
 
       // Create a new mixer
       this.mixer = new THREE.AnimationMixer(this.armature);
@@ -4036,7 +4038,7 @@ class TalkingHead {
             props[ids[0]+".quaternion"] = new THREE.Quaternion().setFromEuler(new THREE.Euler(t.values[0],t.values[1],t.values[2],'XYZ')).normalize();
           }
 
-        });
+  
 
         // Add to clips
         const newPose = { props: props };
@@ -4051,7 +4053,7 @@ class TalkingHead {
           url: url+'-'+ndx,
           clip: anim,
           pose: newPose
-        });
+  
 
         // Play
         this.playAnimation(url, onprogress, dur, ndx, scale);
@@ -4151,7 +4153,7 @@ class TalkingHead {
           } else if ( ids[1] === 'rotation' ) {
             props[ids[0]+".quaternion"] = new THREE.Quaternion().setFromEuler(new THREE.Euler( t.values[0], t.values[1], t.values[2],'XYZ' )).normalize();
           }
-        });
+  
 
         // Add to pose
         const newPose = { props: props };
@@ -4165,7 +4167,7 @@ class TalkingHead {
         this.animPoses.push({
           url: url+'-'+ndx,
           pose: newPose
-        });
+  
 
         // Play
         this.playPose(url, onprogress, dur, ndx, scale);
@@ -4272,7 +4274,7 @@ class TalkingHead {
             const excess = dur * 1000 - total;
             anim.ts = anim.ts.map( (x,i,arr) => {
               return (i===0) ? first : (arr[i-1] + dt[i-1] + rescale[i-1] * excess);
-            });
+      
           } else {
             const scale = (dur * 1000) / total;
             anim.ts = anim.ts.map( x => first + scale * (x - first) );
@@ -4411,7 +4413,7 @@ class TalkingHead {
         this.poseTarget.props[x.link+".quaternion"].copy( x.bone.quaternion );
         this.poseTarget.props[x.link+".quaternion"].t = this.animClock;
         this.poseTarget.props[x.link+".quaternion"].d = d;
-      });
+
     }
   }
 
